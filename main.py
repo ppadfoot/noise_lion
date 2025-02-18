@@ -14,7 +14,7 @@ from timm.data import Mixup
 from timm.models import create_model
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.scheduler import create_scheduler
-from timm.optim import create_optimizer
+#from timm.optim import create_optimizer
 from timm.utils import NativeScaler, get_state_dict, ModelEma
 
 from datasets import build_dataset
@@ -22,7 +22,7 @@ from engine import train_one_epoch, evaluate
 from losses import DistillationLoss
 from samplers import RASampler
 from augment import new_data_aug_generator
-
+from create_optimizer import create_optimizer
 import models
 import models_v2
 
@@ -53,7 +53,7 @@ def get_args_parser():
     parser.add_argument('--model-ema-force-cpu', action='store_true', default=False, help='')
 
     # Optimizer parameters
-    parser.add_argument('--opt', default='adamw', type=str, metavar='OPTIMIZER',
+    parser.add_argument('--optimizer', default='adamw', type=str, metavar='OPTIMIZER',
                         help='Optimizer (default: "adamw"')
     parser.add_argument('--opt-eps', default=1e-8, type=float, metavar='EPSILON',
                         help='Optimizer Epsilon (default: 1e-8)')
@@ -91,6 +91,9 @@ def get_args_parser():
                         help='patience epochs for Plateau LR scheduler (default: 10')
     parser.add_argument('--decay-rate', '--dr', type=float, default=0.1, metavar='RATE',
                         help='LR decay rate (default: 0.1)')
+    
+    parser.add_argument('--nb_classes', default=1000, type=int,
+                    help='number of classes in dataset')
 
     # Augmentation parameters
     parser.add_argument('--color-jitter', type=float, default=0.3, metavar='PCT',
@@ -207,9 +210,11 @@ def main(args):
     cudnn.benchmark = True
 
     dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
+    #args.nb_classes = 1000
     dataset_val, _ = build_dataset(is_train=False, args=args)
 
     if args.distributed:
+        num_tasks = utils.get_world_size()
         num_tasks = utils.get_world_size()
         global_rank = utils.get_rank()
         if args.repeated_aug:
@@ -464,11 +469,14 @@ def main(args):
             
         print(f'Max accuracy: {max_accuracy:.2f}%')
 
+        #log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
+        #             'epoch': epoch,
+        #             'n_parameters': n_parameters}
+
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      **{f'test_{k}': v for k, v in test_stats.items()},
                      'epoch': epoch,
                      'n_parameters': n_parameters}
-        
         
         
         

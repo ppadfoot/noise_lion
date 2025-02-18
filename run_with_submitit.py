@@ -29,11 +29,11 @@ def parse_args():
 
 def get_shared_folder() -> Path:
     user = os.getenv("USER")
-    if Path("/checkpoint/").is_dir():
-        p = Path(f"/checkpoint/{user}/experiments")
-        p.mkdir(exist_ok=True)
-        return p
-    raise RuntimeError("No shared folder available")
+    #if Path("/checkpoint/").is_dir():
+    p = Path(f"/home/irsadrtdinov/sepnorm/data/checkpoint") #"/checkpoint/{user}/experiments")
+    p.mkdir(exist_ok=True)
+    return p
+    #raise RuntimeError("No shared folder available")
 
 
 def get_init_file():
@@ -85,8 +85,8 @@ def main():
         args.job_dir = get_shared_folder() / "%j"
 
     # Note that the folder will depend on the job_id, to easily track experiments
-    executor = submitit.AutoExecutor(folder=args.job_dir, slurm_max_num_timeout=30)
-
+    executor = submitit.AutoExecutor(folder=args.job_dir, slurm_max_num_timeout=30)#, slurm_gpus_per_task=1)
+    #executor.update_parameters(slurm_gpus_per_task=1)
     num_gpus_per_node = args.ngpus
     nodes = args.nodes
     timeout_min = args.timeout
@@ -124,3 +124,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
