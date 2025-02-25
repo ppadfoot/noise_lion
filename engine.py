@@ -9,7 +9,7 @@ from timm.utils import accuracy, ModelEma
 
 from losses import DistillationLoss
 import utils
-
+import numpy as np
 
 def get_weight_norm(model: torch.nn.Module) -> float:
     """Calculate total weight norm for the model."""
@@ -51,7 +51,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     
     if args.cosub:
         criterion = torch.nn.BCEWithLogitsLoss()
-        
+
+
+    mean_rot_angle_by_iterations = []
+       
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
@@ -96,11 +99,16 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         torch.cuda.synchronize()
         if model_ema is not None:
             model_ema.update(model)
+        
+        mean_rot_angle_by_iterations.append(optimizer.mean_angle)
 
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         #metric_logger.update(weight_norm=weight_norm)
         #metric_logger.update(grad_norm=grad_norm)
+  
+    mean_rot_angle_by_epochs = np.mean(mean_rot_angle_by_iterations)
+    metric_logger.meters['mean_rot_angle_by_epochs'].update(mean_rot_angle_by_epochs)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()

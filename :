@@ -22,19 +22,13 @@ def rot_sampler(v, rot_angle):
     noised = noised/noised.norm()
     return noised
 
-def adjust_rot_angle(initial_angle, min_angle, current_epoch, total_epochs):
-    """Косинусное затухание для угла поворота"""
-    cos_decay = 0.5 * (1 + np.cos(np.pi * current_epoch / total_epochs))
-    return min_angle + (initial_angle - min_angle) * cos_decay
-
 class Noise_Lion(torch.optim.Optimizer):
   def __init__(self,
                params,
                lr=1e-4,
                betas=(0.9, 0.99),
-               weight_decay=0.2,
-               rot_angle=1.4,
-               min_rot_angle=0
+               weight_decay=0.0,
+               rot_angle=1.3,
               ):
     defaults = dict(
         lr = lr,
@@ -45,26 +39,15 @@ class Noise_Lion(torch.optim.Optimizer):
     self.lr = lr
     self.wd_coef = weight_decay
     self.betas = betas
-    self.initial_rot_angle = rot_angle
-    self.min_rot_angle = min_rot_angle
     self.rot_angle = rot_angle
     self.momentum = []
     self.update = []
     self.presign = []
 
-  def update_rot_angle(self, epoch, total_epochs):
-    """Обновление значения rot_angle"""
-    self.rot_angle = adjust_rot_angle(
-        self.initial_rot_angle,
-        self.min_rot_angle,
-        epoch,
-        total_epochs
-    )
-
   @torch.no_grad()
   def update_fn(self, p, grad, exp_avg, update, lr, wd, beta2):
     p.mul_(1 - lr * wd)
-    p.add_(update)
+    p.add_(update, alpha = -lr)
     exp_avg.mul_(beta2).add_(grad, alpha = 1 - beta2)
       
   @torch.no_grad()
@@ -75,17 +58,14 @@ class Noise_Lion(torch.optim.Optimizer):
     #cat_prenoise = cat_momemtum.mul_(self.betas[0]).add_(cat_grad, alpha=(1-self.betas[0]))
     #self.rot_angle = cosine_similarity(cat_prenoise, cat_prenoise.sign(), dim=0, eps=1e-20).acos().item()
     if self.rot_angle == None:
-        #cat_prenoise = cat_momemtum.mul_(self.betas[0]).add_(cat_grad, alpha=(1-self.betas[0]))
+        cat_prenoise = cat_momemtum.mul_(self.betas[0]).add_(cat_grad, alpha=(1-self.betas[0]))
         self.rot_angle = cosine_similarity(cat_prenoise, cat_prenoise.sign(), dim=0, eps=1e-20).acos().item()
-    #print(self.rot_angle)
     noised = rot_sampler(cat_prenoise, self.rot_angle)
     cat_update = noised * (-self.lr) * np.sqrt(noised.numel())
     return cat_update, cat_prenoise
     
   @torch.no_grad()
   def step(self, closure=None):
-    print(f"Current weight decay: {self.param_groups[0]['weight_decay']}")
-    print(f"Current lr: {self.param_groups[0]['lr']}")
     loss = None
     if closure is not None:
         with torch.enable_grad():

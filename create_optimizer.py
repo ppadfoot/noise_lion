@@ -21,6 +21,7 @@ from timm.optim.adabelief import AdaBelief
 
 from lion import Lion
 from noise_lion import Noise_Lion
+from testnoiselion import Noise_Lion as Test_Noise_Lion
  
 try:
     from apex.optimizers import FusedNovoGrad, FusedAdam, FusedLAMB, FusedSGD
@@ -66,6 +67,8 @@ def create_optimizer(args, model, filter_bias_and_bn=True):
     """ Legacy optimizer factory for backwards compatibility.
     NOTE: Use create_optimizer_v2 for new code.
     """
+    if args.optimizer.lower() == 'noiselion':
+        filter_bias_and_bn = False
     return create_optimizer_v2(
         model,
         **optimizer_kwargs(cfg=args),
@@ -172,6 +175,9 @@ def create_optimizer_v2(
     elif opt_lower == 'noiselion':
         opt_args.pop('eps', None)
         optimizer = Noise_Lion(parameters, **opt_args)
+    elif opt_lower == 'testnoiselion':
+        opt_args.pop('eps', None)
+        optimizer = Test_Noise_Lion(parameters, **opt_args)
     else:
         assert False and "Invalid optimizer"
         raise ValueError

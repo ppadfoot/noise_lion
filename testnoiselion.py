@@ -22,19 +22,13 @@ def rot_sampler(v, rot_angle):
     noised = noised/noised.norm()
     return noised
 
-def adjust_rot_angle(initial_angle, min_angle, current_epoch, total_epochs):
-    """Косинусное затухание для угла поворота"""
-    cos_decay = 0.5 * (1 + np.cos(np.pi * current_epoch / total_epochs))
-    return min_angle + (initial_angle - min_angle) * cos_decay
-
 class Noise_Lion(torch.optim.Optimizer):
   def __init__(self,
                params,
                lr=1e-4,
                betas=(0.9, 0.99),
-               weight_decay=0.2,
-               rot_angle=1.4,
-               min_rot_angle=0
+               weight_decay=0.0,
+               rot_angle=None,
               ):
     defaults = dict(
         lr = lr,
@@ -45,57 +39,40 @@ class Noise_Lion(torch.optim.Optimizer):
     self.lr = lr
     self.wd_coef = weight_decay
     self.betas = betas
-    self.initial_rot_angle = rot_angle
-    self.min_rot_angle = min_rot_angle
     self.rot_angle = rot_angle
     self.momentum = []
     self.update = []
     self.presign = []
 
-  def update_rot_angle(self, epoch, total_epochs):
-    """Обновление значения rot_angle"""
-    self.rot_angle = adjust_rot_angle(
-        self.initial_rot_angle,
-        self.min_rot_angle,
-        epoch,
-        total_epochs
-    )
-
   @torch.no_grad()
   def update_fn(self, p, grad, exp_avg, update, lr, wd, beta2):
-    p.mul_(1 - lr * wd)
+    #p.mul_(1 - lr * wd)
     p.add_(update)
     exp_avg.mul_(beta2).add_(grad, alpha = 1 - beta2)
-      
+
   @torch.no_grad()
   def get_cat_update(self, cat_grad: torch.Tensor, cat_momemtum: torch.Tensor) -> Tuple[torch.Tensor]:
     cat_prenoise = cat_momemtum.mul_(self.betas[0]).add_(cat_grad, alpha=(1-self.betas[0]))
-    #if self.rot_angle == None:
-    #    self.rot_angle = cosine_similarity(cat_grad, cat_grad.sign(), dim=0, eps=1e-20).acos().item()
-    #cat_prenoise = cat_momemtum.mul_(self.betas[0]).add_(cat_grad, alpha=(1-self.betas[0]))
-    #self.rot_angle = cosine_similarity(cat_prenoise, cat_prenoise.sign(), dim=0, eps=1e-20).acos().item()
     if self.rot_angle == None:
-        #cat_prenoise = cat_momemtum.mul_(self.betas[0]).add_(cat_grad, alpha=(1-self.betas[0]))
-        self.rot_angle = cosine_similarity(cat_prenoise, cat_prenoise.sign(), dim=0, eps=1e-20).acos().item()
-    #print(self.rot_angle)
+        self.rot_angle = cosine_similarity(cat_grad, cat_grad.sign(), dim=0, eps=1e-20).acos().item()
     noised = rot_sampler(cat_prenoise, self.rot_angle)
     cat_update = noised * (-self.lr) * np.sqrt(noised.numel())
     return cat_update, cat_prenoise
-    
+
   @torch.no_grad()
   def step(self, closure=None):
-    print(f"Current weight decay: {self.param_groups[0]['weight_decay']}")
-    print(f"Current lr: {self.param_groups[0]['lr']}")
     loss = None
     if closure is not None:
         with torch.enable_grad():
             loss = closure()
-    
+
     self.lr = self.param_groups[0]['lr']
     self.momentum, self.presign, self.update = [], [], []
     grad_list, shapes = [], []
     for group in self.param_groups:
       for i, p in enumerate([p for p in group['params'] if p.requires_grad]):
+        if group['weight_decay'] > 0:
+            p.mul_(1 - self.lr * group['weight_decay'])
         grad, state = p.grad, self.state[p]
         if len(state) == 0:
           state['exp_avg'] = torch.zeros_like(p)
@@ -105,12 +82,11 @@ class Noise_Lion(torch.optim.Optimizer):
     cat_grad = torch.cat([g.flatten() for g in grad_list])
     cat_momentum = torch.cat([m.flatten() for m in self.momentum])
     cat_update, cat_prenoise = self.get_cat_update(cat_grad, cat_momentum)
-    self.update = [u.view(shapes[i]) for i, u in 
+    self.update = [u.view(shapes[i]) for i, u in
                    enumerate(torch.split(cat_update, [s.numel() for s in shapes]))]
-    self.presign = [p.view(shapes[i]) for i, p in 
+    self.presign = [p.view(shapes[i]) for i, p in
                     enumerate(torch.split(cat_prenoise, [s.numel() for s in shapes]))]
     self.momentum = []
-
 
 
     for j, group in enumerate(self.param_groups):
@@ -126,5 +102,6 @@ class Noise_Lion(torch.optim.Optimizer):
                             lr,
                             wd,
                             beta2)
-    
+
     return loss
+

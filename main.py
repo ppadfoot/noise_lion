@@ -13,8 +13,9 @@ from pathlib import Path
 from timm.data import Mixup
 from timm.models import create_model
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
-from timm.scheduler import create_scheduler
+#from timm.scheduler import create_scheduler
 #from timm.optim import create_optimizer
+
 from timm.utils import NativeScaler, get_state_dict, ModelEma
 
 from datasets import build_dataset
@@ -23,6 +24,7 @@ from losses import DistillationLoss
 from samplers import RASampler
 from augment import new_data_aug_generator
 from create_optimizer import create_optimizer
+from create_scheduler import create_scheduler
 import models
 import models_v2
 
@@ -65,6 +67,10 @@ def get_args_parser():
                         help='SGD momentum (default: 0.9)')
     parser.add_argument('--weight-decay', type=float, default=0.05,
                         help='weight decay (default: 0.05)')
+    parser.add_argument('--rot-angle', type=float, default=1.4,
+                        help='rot angle (default: 1.4)')
+    parser.add_argument('--min-rot-angle', type=float, default=1.4,
+                        help='min rot angle (default: 0.0)')
     # Learning rate schedule parameters
     parser.add_argument('--sched', default='cosine', type=str, metavar='SCHEDULER',
                         help='LR scheduler (default: "cosine"')
@@ -78,7 +84,7 @@ def get_args_parser():
                         help='learning rate noise std-dev (default: 1.0)')
     parser.add_argument('--warmup-lr', type=float, default=1e-6, metavar='LR',
                         help='warmup learning rate (default: 1e-6)')
-    parser.add_argument('--min-lr', type=float, default=1e-5, metavar='LR',
+    parser.add_argument('--min-lr', type=float, default=0, metavar='LR',
                         help='lower lr bound for cyclic schedulers that hit 0 (1e-5)')
 
     parser.add_argument('--decay-epochs', type=float, default=30, metavar='N',
@@ -413,7 +419,7 @@ def main(args):
                 utils._load_checkpoint_for_ema(model_ema, checkpoint['model_ema'])
             if 'scaler' in checkpoint:
                 loss_scaler.load_state_dict(checkpoint['scaler'])
-        lr_scheduler.step(args.start_epoch)
+        #lr_scheduler.step(args.start_epoch)
     if args.eval:
         test_stats = evaluate(data_loader_val, model, device)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
@@ -434,7 +440,12 @@ def main(args):
             args = args,
         )
 
-        lr_scheduler.step(epoch)
+        #lr_scheduler.step(epoch)
+        lr_scheduler.step()
+        
+        #if args.optimizer == 'noiselion':        
+        #    optimizer.update_rot_angle(epoch, args.epochs)
+
         if args.output_dir:
             checkpoint_paths = [output_dir / 'checkpoint.pth']
             for checkpoint_path in checkpoint_paths:
@@ -476,6 +487,7 @@ def main(args):
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      **{f'test_{k}': v for k, v in test_stats.items()},
                      'epoch': epoch,
+                     'mean_angle': optimizer.mean_angle,
                      'n_parameters': n_parameters}
         
         
